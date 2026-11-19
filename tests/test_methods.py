@@ -4,11 +4,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from dss.methods import (ahp_scores, ahp_weights, electre_i, matrix_from_upper,
+from dss.methods import (ahp_scores, ahp_weights, electre_i, load_variants, matrix_from_upper,
                          pairwise_from_points, pareto_front, rank, read_alternatives,
-                         run_all, spearman, topsis)
+                         read_csv_any, run_all, spearman, topsis)
 
-DATA = Path(__file__).resolve().parent.parent / "data"
+DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "variants.csv"
 
 
 def test_ahp_matches_teacher_example_4x4():
@@ -98,9 +98,9 @@ def test_read_alternatives_rejects_bad(bad):
         read_alternatives(bad)
 
 
-@pytest.mark.parametrize("path", sorted(DATA.glob("variant_*.csv")))
-def test_all_demo_variants_run(path):
-    names, X, crit, dirs = read_alternatives(pd.read_csv(path))
+@pytest.mark.parametrize("variant", range(1, 11))
+def test_all_demo_variants_run(variant):
+    names, X, crit, dirs = read_alternatives(load_variants(DATA_FILE)[variant])
     assert X.shape == (5, 9)
     w, *_ = ahp_weights(np.ones((9, 9)))
     table, *_ = run_all(names, X, dirs, w)
@@ -110,3 +110,10 @@ def test_all_demo_variants_run(path):
 
 def test_spearman_identical():
     assert spearman([1, 2, 3], [1, 2, 3]) == pytest.approx(1)
+
+
+def test_read_csv_any_russian_excel():
+    raw = "Ноутбук;Цена (min);Вес кг (min)\nA;55000;1,6\nB;72000;1,3\n".encode("cp1251")
+    df = read_csv_any(raw)
+    names, X, crit, dirs = read_alternatives(df)
+    assert names == ["A", "B"] and X[0, 1] == pytest.approx(1.6) and dirs == ["min", "min"]

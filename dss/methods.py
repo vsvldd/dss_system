@@ -1,4 +1,5 @@
 """Методы поддержки принятия решений: AHP (Саати), TOPSIS, ELECTRE I, Парето."""
+import io
 import re
 
 import numpy as np
@@ -12,7 +13,43 @@ RANDOM_INDEX = {1: 0.0, 2: 0.0, 3: 0.58, 4: 0.90, 5: 1.12, 6: 1.24,
 SAATY_SCALE = [1, 3, 5, 7, 9]
 
 
+# Баллы важности по умолчанию для примера с бизнес-проектами (1 = мало важен, 5 = очень важен)
+DEFAULT_POINTS = {
+    "Готовность": 4, "Инвестиции млн руб": 3, "Срок окупаемости мес": 2,
+    "Численность команды чел": 1, "Конкурентная среда": 3, "Доход млн руб": 5,
+    "Потенциальный рынок": 2, "Популярность": 2, "Риски": 5,
+}
+
+
 # ---------- Данные ----------
+
+def load_variants(path):
+    """Примеры из курса: один CSV, первый столбец "Вариант".
+    Возвращает словарь {номер варианта: таблица альтернатив без этого столбца}."""
+    df = pd.read_csv(path)
+    return {int(v): g.drop(columns="Вариант").reset_index(drop=True)
+            for v, g in df.groupby("Вариант")}
+
+
+def read_csv_any(data: bytes) -> pd.DataFrame:
+    """CSV из любого редактора: UTF-8 или Windows-1251, разделитель запятая или точка с запятой."""
+    for enc in ("utf-8-sig", "cp1251"):
+        try:
+            text = data.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError("Не удалось прочитать файл: неизвестная кодировка.")
+    first = text.splitlines()[0] if text.strip() else ""
+    sep = ";" if first.count(";") > first.count(",") else ","
+    df = pd.read_csv(io.StringIO(text), sep=sep)
+    if sep == ";":   # в русском Excel дробная часть пишется через запятую
+        for c in df.columns[1:]:
+            if not pd.api.types.is_numeric_dtype(df[c]):
+                df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ".").str.strip(), errors="coerce")
+    return df
+
 
 def read_alternatives(df: pd.DataFrame):
     """Первый столбец - названия альтернатив, остальные - числовые критерии.

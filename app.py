@@ -1,6 +1,5 @@
 """Система поддержки принятия решений: AHP (Саати), TOPSIS, ELECTRE I и Парето.
 Запуск: streamlit run app.py"""
-import io
 from pathlib import Path
 
 import numpy as np
@@ -8,17 +7,10 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from dss.methods import (ahp_weights, matrix_from_upper, pairwise_from_points,
-                         read_alternatives, run_all, spearman)
+from dss.methods import (DEFAULT_POINTS, ahp_weights, load_variants, matrix_from_upper,
+                         pairwise_from_points, read_alternatives, read_csv_any, run_all, spearman)
 
-DATA_DIR = Path(__file__).parent / "data"
-
-# Баллы важности по умолчанию для примера с бизнес-проектами (1 = мало важен, 5 = очень важен)
-DEFAULT_POINTS = {
-    "Готовность": 4, "Инвестиции млн руб": 3, "Срок окупаемости мес": 2,
-    "Численность команды чел": 1, "Конкурентная среда": 3, "Доход млн руб": 5,
-    "Потенциальный рынок": 2, "Популярность": 2, "Риски": 5,
-}
+DATA_FILE = Path(__file__).parent / "data" / "variants.csv"
 
 # Шкала Саати для попарных сравнений: подпись -> значение a_ij
 SCALE = {
@@ -27,26 +19,6 @@ SCALE = {
     "B заметно важнее (1/5)": 1 / 5, "B сильно важнее (1/7)": 1 / 7, "B намного важнее (1/9)": 1 / 9,
 }
 SCALE_LABELS = list(SCALE.keys())
-
-
-def read_csv_any(data: bytes) -> pd.DataFrame:
-    """CSV из любого редактора: UTF-8 или Windows-1251, разделитель запятая или точка с запятой."""
-    for enc in ("utf-8-sig", "cp1251"):
-        try:
-            text = data.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
-    else:
-        raise ValueError("Не удалось прочитать файл: неизвестная кодировка.")
-    first = text.splitlines()[0] if text.strip() else ""
-    sep = ";" if first.count(";") > first.count(",") else ","
-    df = pd.read_csv(io.StringIO(text), sep=sep)
-    if sep == ";":   # в русском Excel дробная часть пишется через запятую
-        for c in df.columns[1:]:
-            if not pd.api.types.is_numeric_dtype(df[c]):
-                df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", ".").str.strip(), errors="coerce")
-    return df
 
 
 def nearest_label(value):
@@ -62,10 +34,10 @@ with st.sidebar:
     st.header("1. Данные")
     source = st.radio("Источник", ["Пример из курса", "Свой CSV"])
     if source == "Пример из курса":
-        files = sorted(p.name for p in DATA_DIR.glob("variant_*.csv"))
-        variant = st.selectbox("Вариант (бизнес-проекты)", files,
-                               format_func=lambda f: f"Вариант {int(f[8:10])}")
-        raw = pd.read_csv(DATA_DIR / variant)
+        variants = load_variants(DATA_FILE)
+        variant = st.selectbox("Вариант (бизнес-проекты)", sorted(variants),
+                               format_func=lambda v: f"Вариант {v}")
+        raw = variants[variant]
     else:
         up = st.file_uploader("CSV: первый столбец - названия, далее числовые критерии", type="csv")
         st.caption('Направление критерия можно указать в названии столбца: "Цена (min)", "Качество (max)".')
@@ -77,8 +49,8 @@ with st.sidebar:
         except Exception as e:
             st.error(f"Не удалось прочитать CSV: {e}")
             st.stop()
-    st.download_button("Скачать шаблон CSV", (DATA_DIR / "variant_01.csv").read_bytes(),
-                       "template.csv", "text/csv")
+    template = load_variants(DATA_FILE)[1].to_csv(index=False).encode("utf-8-sig")
+    st.download_button("Скачать шаблон CSV", template, "template.csv", "text/csv")
 
 try:
     names, X_all, criteria_all, dirs_all = read_alternatives(raw)
